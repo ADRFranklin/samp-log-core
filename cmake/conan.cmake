@@ -124,6 +124,19 @@ macro(_conan_detect_compiler)
 
     conan_parse_arguments(${ARGV})
 
+    # Allow explicit compiler settings to bypass local compiler autodetection.
+    # This is needed for clang cross-targeting MSVC ABI, where CMake reports
+    # GNU-like clang and cmake-conan cannot infer a Conan compiler tuple.
+    set(_CONAN_HAS_MANUAL_COMPILER OFF)
+    foreach(_manual_setting ${ARGUMENTS_SETTINGS})
+        if(_manual_setting MATCHES "^compiler(\\.|=)")
+            set(_CONAN_HAS_MANUAL_COMPILER ON)
+        endif()
+    endforeach()
+    if(_CONAN_HAS_MANUAL_COMPILER)
+        message(STATUS "Conan: compiler manually provided in SETTINGS, skipping compiler autodetection")
+    endif()
+
     if(ARGUMENTS_ARCH)
         set(_CONAN_SETTING_ARCH ${ARGUMENTS_ARCH})
     endif()
@@ -132,7 +145,7 @@ macro(_conan_detect_compiler)
         set(_CONAN_SETTING_COMPILER_CPPSTD ${CMAKE_CXX_STANDARD})
     endif()
 
-    if (${CMAKE_${LANGUAGE}_COMPILER_ID} STREQUAL GNU)
+    if(NOT _CONAN_HAS_MANUAL_COMPILER AND ${CMAKE_${LANGUAGE}_COMPILER_ID} STREQUAL GNU)
         # using GCC
         # TODO: Handle other params
         string(REPLACE "." ";" VERSION_LIST ${CMAKE_${LANGUAGE}_COMPILER_VERSION})
@@ -229,7 +242,9 @@ macro(_conan_detect_compiler)
         elseif(CMAKE_VS_PLATFORM_TOOLSET AND (CMAKE_GENERATOR STREQUAL "Ninja"))
             set(_CONAN_SETTING_COMPILER_TOOLSET ${CMAKE_VS_PLATFORM_TOOLSET})
         endif()
-        else()
+    elseif(_CONAN_HAS_MANUAL_COMPILER)
+        # Settings are provided explicitly by caller; no compiler inference needed.
+    else()
         message(FATAL_ERROR "Conan: compiler setup not recognized")
     endif()
 

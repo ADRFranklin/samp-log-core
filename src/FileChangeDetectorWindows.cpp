@@ -1,11 +1,14 @@
 #include "FileChangeDetector.hpp"
 #include "LogManager.hpp"
 
-#include <Windows.h>
+#include <windows.h>
 #include <fmt/format.h>
 
 #include <chrono>
 
+#ifdef ERROR
+#undef ERROR
+#endif
 
 void FileChangeDetector::EventLoop(std::string const file_path)
 {

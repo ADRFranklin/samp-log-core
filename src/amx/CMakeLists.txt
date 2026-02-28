@@ -1,5 +1,3 @@
-include(AMXConfig)
-
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -35,6 +33,8 @@ add_library(amx STATIC
   amx2.h
   amxplugin2.cpp
 )
+
+sampcmake_configure_amx(TARGET amx)
 
 if(UNIX)
 	target_compile_options(amx PUBLIC "-Wno-unused-result")

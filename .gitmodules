@@ -5,3 +5,6 @@
 	path = libs/fmt
 	url = https://github.com/fmtlib/fmt.git
 	branch = release-4.0
+[submodule "libs/sampcmake"]
+	path = libs/sampcmake
+	url = https://github.com/ADRFranklin/sampcmake.git

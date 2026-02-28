@@ -6,38 +6,53 @@ if (NOT LOGCORE_VERSION) # allow version override
 	set(LOGCORE_VERSION ${PROJECT_VERSION})
 endif()
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/libs/cmake")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/libs/sampcmake")
+include(SAMPPluginToolkit)
+sampcmake_apply_global_profile(samp-default)
 
 set(CMAKE_CXX_STANDARD 11) #required for fmt library
 
 if (MSVC)
 	set(CMAKE_BUILD_TYPE "" CACHE STRING "" FORCE)
-elseif(UNIX)
-	# hide non-exported symbols
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden")
-	set_property(GLOBAL PROPERTY FIND_LIBRARY_USE_LIB64_PATHS OFF)
-
-	# link runtime statically
-	set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
-	add_link_options(
-		"-static-libgcc"
-		"-static-libstdc++"
-	)
 endif()
 
 set(LOGCORE_LIBS_DIR "${PROJECT_SOURCE_DIR}/libs")
 
-# -- CONAN
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/conan.cmake" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/sampcmake/patches/cmake-conan-manual-compiler.patch")
+	sampcmake_apply_cmake_conan_manual_compiler_patch(
+		WORK_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+		CMAKE_CONAN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/conan.cmake"
+		PATCH_FILE "${CMAKE_CURRENT_SOURCE_DIR}/libs/sampcmake/patches/cmake-conan-manual-compiler.patch"
+	)
+endif()
 include(cmake/conan.cmake)
+
+set(LOGCORE_CONAN_PROFILE_ARGS "")
+if(DEFINED DCC_CONAN_PROFILE)
+	list(APPEND LOGCORE_CONAN_PROFILE_ARGS PROFILE ${DCC_CONAN_PROFILE})
+endif()
+if(DEFINED DCC_CONAN_PROFILE_HOST)
+	list(APPEND LOGCORE_CONAN_PROFILE_ARGS PROFILE ${DCC_CONAN_PROFILE_HOST})
+endif()
+if(DEFINED DCC_CONAN_PROFILE_BUILD)
+	list(APPEND LOGCORE_CONAN_PROFILE_ARGS PROFILE_BUILD ${DCC_CONAN_PROFILE_BUILD})
+endif()
+
+set(LOGCORE_CONAN_SETTINGS_ARGS "")
+if(DEFINED DCC_CONAN_SETTINGS)
+	list(APPEND LOGCORE_CONAN_SETTINGS_ARGS ${DCC_CONAN_SETTINGS})
+endif()
+
 function(add_conan_lib pkg_name conan_pkg)
 	conan_check(REQUIRED)
 
 	conan_cmake_run(
 		REQUIRES ${conan_pkg}
 		ARCH x86
-		BASIC_SETUP CMAKE_TARGETS
+		BASIC_SETUP CMAKE_TARGETS NO_OUTPUT_DIRS
 		BUILD missing
+		${LOGCORE_CONAN_PROFILE_ARGS}
+		SETTINGS ${LOGCORE_CONAN_SETTINGS_ARGS}
 	)
 
 	set_target_properties(${pkg_name} PROPERTIES IMPORTED_GLOBAL TRUE)

@@ -1706,12 +1706,12 @@ int AMXAPI amx_SetExecErrorHandler(AMX *amx, AMX_EXEC_ERROR handler) {
 #define CHKSTACK()      if (stk>amx->stp) ABORT(amx, AMX_ERR_STACKLOW)
 #define CHKHEAP()       if (hea<amx->hlw) ABORT(amx, AMX_ERR_HEAPLOW)
 
-#if (defined __GNUC__ && !defined __MINGW32__) && !(defined ASM32 || defined JIT)
+#if (defined __GNUC__ && !defined __MINGW32__) && !(defined ASM32 || defined JIT) && !defined __64BIT__
     /* GNU C version uses the "labels as values" extension to create
      * fast "indirect threaded" interpreter.
      */
 
-#define NEXT(cip)       do { (amx)->cip=(cell)cip-(cell)code; goto **cip++; } while (0)
+#define NEXT(cip)       do { (amx)->cip=(cell)cip-(cell)code; goto *(void *)*cip++; } while (0)
 
 int AMXAPI amx_Exec(AMX *amx, cell *retval, int index)
 {

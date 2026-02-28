@@ -1,4 +1,5 @@
-include(AMXConfig)
+include(SAMPPluginToolkit)
+sampcmake_configure_amx()
 
 option(LOGCORE_INSTALL_DEV 
 	"Generate install target specifically for development." ON)
@@ -11,16 +12,13 @@ if(WIN32)
 else()
 	set(CRASHHANDLER_CPP crashhandler_unix.cpp)
 	set(FILECHANGEDETECTOR_CPP FileChangeDetectorLinux.cpp)
-	set(
-		ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/artifact/"
-		LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/artifact/"
-		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/artifact/"
-	)
 endif()
 
 set(LOGCORE_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include/samplog)
 
-add_library(log-core SHARED
+sampcmake_add_shared_library(log-core
+	NO_PREFIX
+	SOURCES
 	Api.cpp
 	AmxDebugManager.cpp
 	AmxDebugManager.hpp
@@ -70,8 +68,10 @@ target_compile_features(log-core PUBLIC
 	cxx_variadic_templates
 )
 
-set_target_properties(log-core PROPERTIES PREFIX "")
 set_target_properties(log-core PROPERTIES OUTPUT_NAME "log-core2")
+if(MINGW)
+	set_target_properties(log-core PROPERTIES SUFFIX ".dll")
+endif()
 
 target_include_directories(log-core PRIVATE 
 	${LOGCORE_LIBS_DIR}/tinydir
@@ -92,25 +92,10 @@ if(UNIX AND NOT APPLE)
 endif()
 
 if (MSVC)
-	# increase warning levels
-	target_compile_options(log-core PRIVATE
-		/W4
-		/WX
-		/permissive-
-	)
-
-	# enable multi-processor compilation
-	target_compile_options(log-core PRIVATE
-		/MP
-	)
-elseif(UNIX)
-	# increase warning levels
-	target_compile_options(log-core PRIVATE
-		-Wall
-		-Wextra
-		-pedantic
-	)
+	target_compile_options(log-core PRIVATE /WX)
 endif()
+
+sampcmake_apply_target_profile(log-core plugin-windows-cross-static-runtime)
 
 target_link_libraries(log-core PRIVATE
 	amx
@@ -118,18 +103,8 @@ target_link_libraries(log-core PRIVATE
 	CONAN_PKG::yaml-cpp
 )
 
-if(MSVC)
-set_target_properties(log-core
-    PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY $<1:${CMAKE_BINARY_DIR}/artifact>
-	LIBRARY_OUTPUT_DIRECTORY  $<1:${CMAKE_BINARY_DIR}/artifact>
+sampcmake_configure_plugin_target_output(log-core
+	RUNTIME_DIR "${CMAKE_BINARY_DIR}/artifact"
+	LIBRARY_DIR "${CMAKE_BINARY_DIR}/artifact"
+	ARCHIVE_DIR "${CMAKE_BINARY_DIR}/lib"
 )
-elseif(UNIX)
-message("binary dir:" ${CMAKE_BINARY_DIR})
-set_target_properties(log-core
-    PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/artifact
-	LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/artifact
-	ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/artifact
-)
-endif()
