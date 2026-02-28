@@ -40,7 +40,7 @@ private:
 	~LogConfig() = default;
 
 private: // variables
-	std::mutex _configLock;
+	mutable std::mutex _configLock;
 	std::unordered_map<std::string, Logger::Config> _loggerConfigs;
 	std::unordered_map<std::string, ConfigUpdateEvent_t> _loggerConfigEvents;
 	std::map<samplog_LogLevel, samplog_LogLevelConfig> _levelConfigs;
@@ -64,25 +64,29 @@ public: // functions
 
 	inline void SubscribeLogger(Logger *logger, ConfigUpdateEvent_t &&cb)
 	{
+		std::lock_guard<std::mutex> lock(_configLock);
 		auto e_it = _loggerConfigEvents.emplace(logger->GetModuleName(),
 			std::forward<ConfigUpdateEvent_t>(cb));
-
-		std::lock_guard<std::mutex> lock(_configLock);
 		auto it = _loggerConfigs.find(logger->GetModuleName());
 		if (it != _loggerConfigs.end())
 			e_it.first->second(it->second);
 	}
 	inline void UnsubscribeLogger(Logger *logger)
 	{
+		std::lock_guard<std::mutex> lock(_configLock);
 		_loggerConfigEvents.erase(logger->GetModuleName());
 	}
 
-	samplog_LogLevelConfig const &Getsamplog_LogLevelConfig(samplog_LogLevel level)
+	samplog_LogLevelConfig Getsamplog_LogLevelConfig(samplog_LogLevel level) const
 	{
 		std::lock_guard<std::mutex> lock(_configLock);
-		return _levelConfigs[level];
+		auto it = _levelConfigs.find(level);
+		if (it != _levelConfigs.end()) {
+			return it->second;
+		}
+		return {};
 	}
-	GlobalConfig const &GetGlobalConfig()
+	GlobalConfig GetGlobalConfig() const
 	{
 		std::lock_guard<std::mutex> lock(_configLock);
 		return _globalConfig;

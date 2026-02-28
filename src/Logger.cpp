@@ -8,6 +8,7 @@
 #include <fmt/format.h>
 #include <fmt/chrono.h>
 #include <ctime>
+#include <fstream>
 
 
 Logger::Logger(std::string module_name) :
@@ -25,6 +26,8 @@ Logger::Logger(std::string module_name) :
 		// create file if it doesn't exist, and truncate whole content
 		std::ofstream logfile(_logFilePath, std::ofstream::trunc);
 	}
+
+	_logFile.open(_logFilePath, std::ofstream::out | std::ofstream::app);
 }
 
 Logger::~Logger()
@@ -32,10 +35,14 @@ Logger::~Logger()
 	LogConfig::Get()->UnsubscribeLogger(this);
 	LogRotationManager::Get()->UnregisterLogFile(_logFilePath);
 
-	// wait until all log messages are processed, as we have this logger
-	// referenced in the action lambda and deleting it would be bad
-	while (_logCounter != 0)
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	// Wait until all queued messages that captured this logger are processed.
+	std::unique_lock<std::mutex> lock(_logCounterMutex);
+	_logCounterCv.wait(lock, [this] {
+		return _logCounter.load(std::memory_order_acquire) == 0;
+	});
+	if (_logFile.is_open()) {
+		_logFile.close();
+	}
 }
 
 bool Logger::Log(samplog_LogLevel level, std::string msg,
@@ -45,6 +52,7 @@ bool Logger::Log(samplog_LogLevel level, std::string msg,
 		return false;
 
 	auto current_time = Clock::now();
+	_logCounter.fetch_add(1, std::memory_order_acq_rel);
 	LogManager::Get()->Queue([this, level, current_time, msg, call_info]()
 	{
 		std::string const
@@ -54,14 +62,15 @@ bool Logger::Log(samplog_LogLevel level, std::string msg,
 		WriteLogString(time_str, level, log_msg);
 		LogManager::Get()->WriteLevelLogString(time_str, level, GetModuleName(), msg);
 
-		auto const &level_config = LogConfig::Get()->Getsamplog_LogLevelConfig(level);
+		auto level_config = LogConfig::Get()->Getsamplog_LogLevelConfig(level);
 		if (_config.PrintToConsole || level_config.PrintToConsole)
 			PrintLogString(time_str, level, log_msg);
 
-		--_logCounter;
+		if (_logCounter.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+			std::lock_guard<std::mutex> lock(_logCounterMutex);
+			_logCounterCv.notify_all();
+		}
 	});
-
-	++_logCounter;
 	return true;
 }
 
@@ -149,8 +158,8 @@ void Logger::OnConfigUpdate(Logger::Config const &config)
 std::string Logger::FormatTimestamp(Clock::time_point time)
 {
 	std::time_t now_c = std::chrono::system_clock::to_time_t(time);
-	auto const &time_format = LogConfig::Get()->GetGlobalConfig().LogTimeFormat;
-	return fmt::format("{:" + time_format + "}", fmt::localtime(now_c));
+	auto global_config = LogConfig::Get()->GetGlobalConfig();
+	return fmt::format("{:" + global_config.LogTimeFormat + "}", fmt::localtime(now_c));
 }
 
 std::string Logger::FormatLogMessage(std::string message,
@@ -179,10 +188,20 @@ std::string Logger::FormatLogMessage(std::string message,
 
 void Logger::WriteLogString(std::string const &time, samplog_LogLevel level, std::string const &message)
 {
-	utils::EnsureFolders(_logFilePath);
-	std::ofstream logfile(_logFilePath,
-		std::ofstream::out | std::ofstream::app);
-	logfile <<
+	// Re-open log file when rotation renamed it out from under us.
+	if (!std::ifstream(_logFilePath)) {
+		if (_logFile.is_open()) {
+			_logFile.close();
+		}
+	}
+	if (!_logFile.is_open()) {
+		_logFile.open(_logFilePath, std::ofstream::out | std::ofstream::app);
+		if (!_logFile) {
+			return;
+		}
+	}
+
+	_logFile <<
 		"[" << time << "] " <<
 		"[" << utils::Getsamplog_LogLevelAsString(level) << "] " <<
 		message << '\n' << std::flush;
@@ -191,7 +210,8 @@ void Logger::WriteLogString(std::string const &time, samplog_LogLevel level, std
 void Logger::PrintLogString(std::string const &time, samplog_LogLevel level, std::string const &message)
 {
 	auto *samplog_LogLevel_str = utils::Getsamplog_LogLevelAsString(level);
-	if (LogConfig::Get()->GetGlobalConfig().EnableColors)
+	auto global_config = LogConfig::Get()->GetGlobalConfig();
+	if (global_config.EnableColors)
 	{
 		utils::EnsureTerminalColorSupport();
 

@@ -3,6 +3,9 @@
 #include <string>
 #include <chrono>
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <fstream>
 
 #include <samplog/export.h>
 #include <samplog/ILogger.hpp>
@@ -66,7 +69,10 @@ private:
 private:
 	std::string const _moduleName;
 	std::string const _logFilePath;
+	std::ofstream _logFile;
 	std::atomic<unsigned int> _logCounter;
+	std::mutex _logCounterMutex;
+	std::condition_variable _logCounterCv;
 
 	Config _config;
 };

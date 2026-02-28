@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <mutex>
+#include <unordered_set>
 
 #ifdef WIN32
 #  include <windows.h>
@@ -72,9 +74,23 @@ void utils::CreateFolder(std::string foldername)
 
 void utils::EnsureFolders(std::string const &path)
 {
+	static std::mutex cache_mutex;
+	static std::unordered_set<std::string> ensured_dirs;
+
 	size_t pos = 0;
-	while ((pos = path.find('/', pos)) != std::string::npos)
-		utils::CreateFolder(path.substr(0, pos++));
+	while ((pos = path.find('/', pos)) != std::string::npos) {
+		auto dir = path.substr(0, pos++);
+		{
+			std::lock_guard<std::mutex> lock(cache_mutex);
+			if (ensured_dirs.find(dir) != ensured_dirs.end()) {
+				continue;
+			}
+		}
+
+		utils::CreateFolder(dir);
+		std::lock_guard<std::mutex> lock(cache_mutex);
+		ensured_dirs.insert(std::move(dir));
+	}
 }
 
 void utils::EnsureTerminalColorSupport()

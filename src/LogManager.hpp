@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <fstream>
 #include <functional>
+#include <array>
 
 #include "Singleton.hpp"
 #include "Logger.hpp"
@@ -45,12 +46,21 @@ private:
 	void Process();
 
 private:
+	struct LevelFileState
+	{
+		std::string path;
+		std::ofstream stream;
+		bool dirEnsured = false;
+	};
+
+private:
 	std::atomic<bool> _threadRunning;
-	std::thread *_thread;
+	std::thread _thread;
 
 	std::mutex _queueMtx;
 	std::condition_variable _queueNotifier;
 	std::queue<Action_t> _queue;
+	std::array<LevelFileState, 3> _levelFiles;
 
 	Logger _internalLogger;
 };

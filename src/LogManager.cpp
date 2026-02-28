@@ -12,19 +12,17 @@
 #include "utils.hpp"
 
 #include <memory>
-#include <map>
 
 using samplog::samplog_LogLevel;
 
 
 LogManager::LogManager() :
 	_threadRunning(true),
-	_thread(nullptr),
 	_internalLogger("log-core")
 {
 	crashhandler::Install();
 
-	_thread = new std::thread(std::bind(&LogManager::Process, this));
+	_thread = std::thread(std::bind(&LogManager::Process, this));
 }
 
 LogManager::~LogManager()
@@ -34,8 +32,9 @@ LogManager::~LogManager()
 		_threadRunning = false;
 	}
 	_queueNotifier.notify_one();
-	_thread->join();
-	delete _thread;
+	if (_thread.joinable()) {
+		_thread.join();
+	}
 }
 
 void LogManager::Queue(Action_t &&action)
@@ -50,33 +49,66 @@ void LogManager::Queue(Action_t &&action)
 void LogManager::WriteLevelLogString(std::string const &time, samplog_LogLevel level,
 	std::string const &module_name, std::string const &message)
 {
-	static const std::map<samplog_LogLevel, std::string> level_files{
-		{ samplog_LogLevel::WARNING, "warnings.log" },
-		{ samplog_LogLevel::ERROR, "errors.log" },
-		{ samplog_LogLevel::FATAL, "fatals.log" }
-	};
-
-	auto it = level_files.find(level);
-	if (it != level_files.end())
-	{
-		auto file_path = LogConfig::Get()->GetGlobalConfig().LogsRootFolder + it->second;
-		utils::EnsureFolders(file_path);
-		std::ofstream samplog_LogLevel_file(file_path,
-			std::ofstream::out | std::ofstream::app);
-		samplog_LogLevel_file <<
-			"[" << time << "] " <<
-			"[" << module_name << "] " <<
-			message << '\n' << std::flush;
+	const char *filename = nullptr;
+	size_t idx = 0;
+	switch (level) {
+	case samplog_LogLevel::WARNING:
+		filename = "warnings.log";
+		idx = 0;
+		break;
+	case samplog_LogLevel::ERROR:
+		filename = "errors.log";
+		idx = 1;
+		break;
+	case samplog_LogLevel::FATAL:
+		filename = "fatals.log";
+		idx = 2;
+		break;
+	default:
+		return;
 	}
+
+	auto globalConfig = LogConfig::Get()->GetGlobalConfig();
+	auto file_path = globalConfig.LogsRootFolder + filename;
+	auto &state = _levelFiles[idx];
+
+	if (state.path != file_path) {
+		if (state.stream.is_open()) {
+			state.stream.close();
+		}
+		state.path = file_path;
+		state.dirEnsured = false;
+	}
+
+	if (!state.dirEnsured) {
+		utils::EnsureFolders(file_path);
+		state.dirEnsured = true;
+	}
+	if (!state.stream.is_open()) {
+		state.stream.open(file_path, std::ofstream::out | std::ofstream::app);
+		if (!state.stream) {
+			return;
+		}
+	}
+
+	state.stream <<
+		"[" << time << "] " <<
+		"[" << module_name << "] " <<
+		message << '\n' << std::flush;
 }
 
 void LogManager::Process()
 {
 	std::unique_lock<std::mutex> lk(_queueMtx);
 
-	do
-	{
-		_queueNotifier.wait(lk);
+	while (true) {
+		_queueNotifier.wait(lk, [this] {
+			return !_threadRunning || !_queue.empty();
+		});
+
+		if (!_threadRunning && _queue.empty()) {
+			break;
+		}
 
 		while (!_queue.empty())
 		{
@@ -91,5 +123,5 @@ void LogManager::Process()
 			action();
 			lk.lock();
 		}
-	} while (_threadRunning);
+	}
 }

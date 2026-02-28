@@ -168,7 +168,7 @@ bool AmxDebugManager::GetFunctionCallTrace(AMX * const amx, std::vector<AmxFuncC
 	if (_disableDebugInfo)
 		return false;
 
-	if (_amxDebugMap.find(amx) != _amxDebugMap.end())
+	if (_amxDebugMap.find(amx) == _amxDebugMap.end())
 		return false;
 
 	AmxFuncCallInfo call_info;

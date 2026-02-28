@@ -1,6 +1,7 @@
 #include <fstream>
 #include <vector>
 #include <functional>
+#include <cstring>
 #include <fmt/format.h>
 #include <fmt/chrono.h>
 #include <tinydir.h>
@@ -42,31 +43,37 @@ void LogRotationManager::Process()
 			}
 		}
 
+		std::vector<std::pair<std::string, LogRotationConfig>> entries;
 		{
 			std::lock_guard<std::mutex> lock(_rotationEntriesLock);
-			for (auto const &e : _rotationEntries)
+			entries.reserve(_rotationEntries.size());
+			for (auto const &entry : _rotationEntries) {
+				entries.push_back(entry);
+			}
+		}
+
+		for (auto const &entry : entries)
+		{
+			auto const &file_path = entry.first;
+			auto const &config = entry.second;
+
+			switch (config.Type)
 			{
-				auto const &file_path = e.first;
-				auto const &config = e.second;
+			case LogRotationType::DATE:
+				// skip date check if it already happened within the same minute
+				if (skip_date_check)
+					continue;
 
-				switch (config.Type)
-				{
-				case LogRotationType::DATE:
-					// skip date check if it already happened within the same minute
-					if (skip_date_check)
-						continue;
+				CheckDateRotation(file_path, config.Value.Date, config.BackupCount);
+				break;
 
-					CheckDateRotation(file_path, config.Value.Date, config.BackupCount);
-					break;
-
-				case LogRotationType::SIZE:
-					CheckSizeRotation(file_path, config.Value.FileSize, config.BackupCount);
-					break;
-				case LogRotationType::NONE:
-				default:
-					// do nothing
-					break;
-				}
+			case LogRotationType::SIZE:
+				CheckSizeRotation(file_path, config.Value.FileSize, config.BackupCount);
+				break;
+			case LogRotationType::NONE:
+			default:
+				// do nothing
+				break;
 			}
 		}
 		std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -121,6 +128,7 @@ void LogRotationManager::CheckDateRotation(std::string const &file_path,
 	if (backup_count > 0)
 	{
 		tinydir_dir dir;
+		memset(&dir, 0, sizeof(decltype(dir)));
 		tinydir_open(&dir, file_dir.c_str());
 
 		while (dir.has_next)
@@ -197,6 +205,7 @@ void LogRotationManager::CheckSizeRotation(std::string const &file_path,
 	if (backup_count > 0)
 	{
 		tinydir_dir dir;
+		memset(&dir, 0, sizeof(decltype(dir)));
 		tinydir_open(&dir, file_dir.c_str());
 
 		while (dir.has_next)
