@@ -1,8 +1,10 @@
 include(SAMPPluginToolkit)
 sampcmake_configure_amx()
 
-option(LOGCORE_INSTALL_DEV 
+option(LOGCORE_INSTALL_DEV
 	"Generate install target specifically for development." ON)
+option(LOGCORE_BUILD_SHARED
+	"Build log-core as shared library (OFF builds it statically)." ON)
 
 add_subdirectory(amx)
 
@@ -16,9 +18,7 @@ endif()
 
 set(LOGCORE_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include/samplog)
 
-sampcmake_add_shared_library(log-core
-	NO_PREFIX
-	SOURCES
+set(LOGCORE_SOURCES
 	Api.cpp
 	AmxDebugManager.cpp
 	AmxDebugManager.hpp
@@ -44,12 +44,23 @@ sampcmake_add_shared_library(log-core
 	${LOGCORE_INCLUDE_DIR}/export.h
 )
 
+if(LOGCORE_BUILD_SHARED)
+	sampcmake_add_shared_library(log-core
+		NO_PREFIX
+		SOURCES
+		${LOGCORE_SOURCES}
+	)
+else()
+	add_library(log-core STATIC ${LOGCORE_SOURCES})
+	set_target_properties(log-core PROPERTIES PREFIX "")
+endif()
+
 target_include_directories(log-core PRIVATE "../include")
 
-target_compile_features(log-core PUBLIC 
-	cxx_auto_type 
-	cxx_decltype 
-	cxx_defaulted_functions 
+target_compile_features(log-core PUBLIC
+	cxx_auto_type
+	cxx_decltype
+	cxx_defaulted_functions
 	cxx_default_function_template_args
 	cxx_delegating_constructors
 	cxx_deleted_functions
@@ -69,15 +80,22 @@ target_compile_features(log-core PUBLIC
 )
 
 set_target_properties(log-core PROPERTIES OUTPUT_NAME "log-core2")
-if(MINGW)
+if(MINGW AND LOGCORE_BUILD_SHARED)
 	set_target_properties(log-core PROPERTIES SUFFIX ".dll")
 endif()
 
-target_include_directories(log-core PRIVATE 
+target_include_directories(log-core PRIVATE
 	${LOGCORE_LIBS_DIR}/tinydir
 )
 
-target_compile_definitions(log-core PRIVATE IN_LOGCORE_PLUGIN FMT_HEADER_ONLY)
+if(LOGCORE_BUILD_SHARED)
+	target_compile_definitions(log-core PRIVATE IN_LOGCORE_PLUGIN FMT_HEADER_ONLY)
+else()
+	target_compile_definitions(log-core
+		PUBLIC LOGCORE_STATIC
+		PRIVATE IN_LOGCORE_PLUGIN FMT_HEADER_ONLY
+	)
+endif()
 if(MSVC)
 	target_compile_definitions(log-core PRIVATE
 		_CRT_SECURE_NO_WARNINGS
@@ -103,8 +121,10 @@ target_link_libraries(log-core PRIVATE
 	CONAN_PKG::yaml-cpp
 )
 
-sampcmake_configure_plugin_target_output(log-core
-	RUNTIME_DIR "${CMAKE_BINARY_DIR}/artifact"
-	LIBRARY_DIR "${CMAKE_BINARY_DIR}/artifact"
-	ARCHIVE_DIR "${CMAKE_BINARY_DIR}/lib"
-)
+if(LOGCORE_BUILD_SHARED)
+	sampcmake_configure_plugin_target_output(log-core
+		RUNTIME_DIR "${CMAKE_BINARY_DIR}/artifact"
+		LIBRARY_DIR "${CMAKE_BINARY_DIR}/artifact"
+		ARCHIVE_DIR "${CMAKE_BINARY_DIR}/lib"
+	)
+endif()
